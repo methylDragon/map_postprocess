@@ -17,8 +17,8 @@ def get_map_values(img):
             out.add(px)
     return out
 
-def get_tri_range(img):
-    """Given three values, generate ranges using the values' midpoints."""
+def get_ranges(img):
+    """Generate value ranges using the values' midpoints."""
     values = list(get_map_values(img))
     values.sort()
 
@@ -38,7 +38,7 @@ def show_img(img):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-ranges = get_tri_range(img)
+ranges = get_ranges(img)
 
 for range_ in ranges:
     mask = cv2.inRange(img, *[int(i) for i in range_])
@@ -57,6 +57,7 @@ def img_masked_overlay(img, mask, back_img):
 
     return cv2.bitwise_or(fg, fg_back_inv)
 
+get_map_values(img)
 show_img(img)
 
 img_copy = img.copy()
