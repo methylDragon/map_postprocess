@@ -1,1 +1,97 @@
 #!/usr/bin/env python
+
+import rospy
+import cv2
+import numpy as np
+
+from nav_msgs.msg import OccupancyGrid
+
+
+# UTILITY FUNCTIONS ============================================================
+def make_img(shape, color, dtype=np.uint8):
+    new_img = np.zeros(shape, dtype)
+    new_img[:] = color
+    return new_img
+
+
+class MapPostproc:
+    """Subscribe to map topic, process map, and republish processed map."""
+    def __init__(self):
+        # ROS ==================================================================
+        rospy.init_node('map_postprocess')
+
+        self.map_sub = rospy.Subscriber(
+            "map", OccupancyGrid, self.map_cb, queue_size=1
+        )
+
+        self.map_pub = rospy.Publisher(
+            'map_processed', OccupancyGrid, queue_size=1
+        )
+
+        self.rate = rospy.Rate(rospy.get_param("~max_pub_rate", 10)) # 10hz
+
+        # PARAMS ===============================================================
+        self.process_free = rospy.get_param("~process_free", True)
+
+        self.erosion_size = rospy.get_param('~erosion_size', 1)
+        self.iters = rospy.get_param("~iterations", 6)
+
+        self.free_ros = rospy.get_param("~free_val", 0)
+        self.unknown_ros = rospy.get_param("~unknown_val", 255)
+        self.obstacle_ros = rospy.get_param("~obstacle_val", 100) # % occupancy
+
+        self.free_img = 254
+        self.unknown_img = 205
+        self.obstacle_img = 0 # 0% brightness (black)
+
+        self.kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (2 * self.erosion_size + 1, 2 * self.erosion_size + 1)
+        )
+
+        # LOOP =================================================================
+        rospy.spin()
+
+    def process_map_img(self, map, height, width, dtype=np.int8):
+        """Process and return map image, unflattened."""
+        img_in = np.array(map, dtype=np.uint8).reshape(height, width)
+        img = img_in.copy()
+
+        # NOTE(CH3): We might not need to do this conversion...
+        img[(img_in == self.free_ros)] = self.free_img
+        img[(img_in == self.unknown_ros)] = self.unknown_img
+        img[(img_in == self.obstacle_ros)] = self.obstacle_img
+
+        # Isolate layers
+        free_mask = cv2.inRange(img, self.free_img, self.free_img)
+        unknown_mask = cv2.inRange(img, self.unknown_img, self.unknown_img)
+        obstacle_mask = cv2.inRange(img, self.obstacle_img, self.obstacle_img)
+
+        # Process free layer
+        if self.process_free:
+            free_mask = cv2.erode(free_mask, kernel, iterations=self.iters)
+            free_mask = cv2.dilate(free_mask, kernel, iterations=self.iters)
+
+        # Construct new map img
+        new_img = make_img(img.shape, (self.unknown_ros), dtype=dtype)
+        new_img[(free_mask != 0)] = self.free_ros
+        new_img[(obstacle_mask != 0)] = self.obstacle_ros
+
+        return new_img
+
+    def map_cb(self, msg):
+        out_msg = OccupancyGrid()
+        out_msg.header = msg.header
+        out_msg.header = msg.info
+
+        out_img = self.process_map_img(msg.data,
+                                       msg.info.height,
+                                       msg.info.height.width,
+                                       dtype=np.int8)
+
+        out_msg.data = out_img.flatten()
+        self.map_pub.publish(out_msg)
+        self.rate.sleep()
+
+if __name__ == '__main__':
+    node = MapPostproc()
