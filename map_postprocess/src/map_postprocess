@@ -69,8 +69,8 @@ class MapPostproc:
 
         # Process free layer
         if self.process_free:
-            free_mask = cv2.erode(free_mask, kernel, iterations=self.iters)
-            free_mask = cv2.dilate(free_mask, kernel, iterations=self.iters)
+            free_mask = cv2.erode(free_mask, self.kernel, iterations=self.iters)
+            free_mask = cv2.dilate(free_mask, self.kernel, iterations=self.iters)
 
         # Construct new map img
         new_img = make_img(img.shape, (self.unknown_ros), dtype=dtype)
@@ -82,11 +82,11 @@ class MapPostproc:
     def map_cb(self, msg):
         out_msg = OccupancyGrid()
         out_msg.header = msg.header
-        out_msg.header = msg.info
+        out_msg.info = msg.info
 
         out_img = self.process_map_img(msg.data,
                                        msg.info.height,
-                                       msg.info.height.width,
+                                       msg.info.width,
                                        dtype=np.int8)
 
         out_msg.data = out_img.flatten()
